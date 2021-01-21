@@ -1,6 +1,6 @@
 from typing import Any, cast, Callable
 
-from kubernetes import client
+from kubernetes import client, stream
 from kubernetes.watch import Watch
 from kubernetes.client.rest import ApiException
 
@@ -682,3 +682,99 @@ class ReadNamespacedPodLogs(Task):
             except ApiException as exception:
                 if exception.status != 410:
                     raise
+
+
+class ConnectGetNamespacedPodExec(Task):
+    """
+    Task for running a command in a namespaced pod on Kubernetes.
+    Note that all initialization arguments can optionally be provided or overwritten at runtime.
+    This task will attempt to connect to a Kubernetes cluster in three steps with
+    the first successful connection attempt becoming the mode of communication with a
+    cluster.
+    1. Attempt to use a Prefect Secret that contains a Kubernetes API Key. If
+    `kubernetes_api_key_secret` = `None` then it will attempt the next two connection
+    methods. By default the value is `KUBERNETES_API_KEY` so providing `None` acts as
+    an override for the remote connection.
+    2. Attempt in-cluster connection (will only work when running on a Pod in a cluster)
+    3. Attempt out-of-cluster connection using the default location for a kube config file
+    The argument `kube_kwargs` will perform an in-place update when the task
+    is run. This means that it is possible to provide `kube_kwargs = {"info": "here"}` at
+    instantiation and then provide `kube_kwargs = {"more": "info"}` at run time which will make
+    `kube_kwargs = {"info": "here", "more": "info"}`. *Note*: Keys present in both instantiation
+    and runtime will be replaced with the runtime value.
+    Args:
+        - pod_name (str, optional): The name of a pod in which to run exec_command
+        - exec_command (list, optional): the command to run in pod_name
+        - namespace (str, optional): The Kubernetes namespace to read this pod from,
+            defaults to the `default` namespace
+        - kube_kwargs (dict, optional): Optional extra keyword arguments to pass to the
+            Kubernetes API (e.g. `{"pretty": "...", "exact": "..."}`)
+        - kubernetes_api_key_secret (str, optional): the name of the Prefect Secret
+            which stored your Kubernetes API Key; this Secret must be a string and in
+            BearerToken format
+        - **kwargs (dict, optional): additional keyword arguments to pass to the Task
+            constructor
+    """
+
+    def __init__(
+        self,
+        pod_name: str = None,
+        exec_command: list = None,
+        namespace: str = "default",
+        kube_kwargs: dict = None,
+        kubernetes_api_key_secret: str = "KUBERNETES_API_KEY",
+        **kwargs: Any
+    ):
+        self.pod_name = pod_name
+        self.namespace = namespace
+        self.exec_command = exec_command
+        self.kube_kwargs = kube_kwargs or {}
+        self.kubernetes_api_key_secret = kubernetes_api_key_secret
+
+        super().__init__(**kwargs)
+
+    @defaults_from_attrs(
+        "pod_name",
+        "namespace",
+        "kube_kwargs",
+        "kubernetes_api_key_secret",
+        "exec_command",
+    )
+    def run(
+        self,
+        pod_name: str = None,
+        exec_command: list = None,
+        namespace: str = "default",
+        kube_kwargs: dict = None,
+        kubernetes_api_key_secret: str = "KUBERNETES_API_KEY",
+    ) -> None:
+        """
+        Task run method.
+        Args:
+            - pod_name (str, optional): The name of a pod to read
+            - namespace (str, optional): The Kubernetes namespace to read this pod in,
+                defaults to the `default` namespace
+            - exec_command (list, optional): the command to run in pod_name
+            - kube_kwargs (dict, optional): Optional extra keyword arguments to pass to the
+                Kubernetes API (e.g. `{"pretty": "...", "exact": "..."}`)
+            - kubernetes_api_key_secret (str, optional): the name of the Prefect Secret
+                which stored your Kubernetes API Key; this Secret must be a string and in
+                BearerToken format
+        Returns:
+            - str: If the method is called asynchronously, returns the request thread
+        Raises:
+            - ValueError: if `pod_name` is `None` or `exec_command` is `None`
+        """
+        api_client = cast(
+            client.CoreV1Api, get_kubernetes_client("pod", kubernetes_api_key_secret)
+        )
+
+        kube_kwargs = {**self.kube_kwargs, **(kube_kwargs or {})}
+
+        stream(
+            api_client.connect_get_namespaced_pod_exec,
+            name=pod_name,
+            namespace=namespace,
+            command=exec_command,
+            **kube_kwargs
+        )
