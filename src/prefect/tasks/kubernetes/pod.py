@@ -1,6 +1,7 @@
 from typing import Any, cast, Callable
 
-from kubernetes import client, stream
+from kubernetes import client
+from kubernetes.stream import stream
 from kubernetes.watch import Watch
 from kubernetes.client.rest import ApiException
 
@@ -766,15 +767,26 @@ class ConnectGetNamespacedPodExec(Task):
             - ValueError: if `pod_name` is `None` or `exec_command` is `None`
         """
         api_client = cast(
-            client.CoreV1Api, get_kubernetes_client("pod", kubernetes_api_key_secret)
+            client.CoreV1Api,
+            get_kubernetes_client("pod", kubernetes_api_key_secret=None),
         )
 
         kube_kwargs = {**self.kube_kwargs, **(kube_kwargs or {})}
 
-        stream(
+        api_client = cast(
+            client.CoreV1Api, get_kubernetes_client("pod", kubernetes_api_key_secret)
+        )
+
+        api_response = stream(
             api_client.connect_get_namespaced_pod_exec,
             name=pod_name,
             namespace=namespace,
+            container=None,
             command=exec_command,
+            stderr=True,
+            stdin=True,
+            stdout=True,
+            tty=True,
             **kube_kwargs
         )
+        return api_response

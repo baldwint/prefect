@@ -48,7 +48,6 @@ def get_kubernetes_client(
         - KubernetesClient: an initialized and authenticated Kubernetes Client
     """
     k8s_client = K8S_CLIENTS[resource]
-
     kubernetes_api_key = None
     if kubernetes_api_key_secret:
         kubernetes_api_key = Secret(kubernetes_api_key_secret).get()
