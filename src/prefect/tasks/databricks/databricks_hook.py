@@ -24,6 +24,8 @@ SUBMIT_RUN_ENDPOINT = ("POST", "api/2.0/jobs/runs/submit")
 
 GET_RUN_ENDPOINT = ("GET", "api/2.0/jobs/runs/get")
 
+GET_RUN_OUTPUT_ENDPOINT = ("GET", "api/2.0/jobs/runs/get-output")
+
 CANCEL_RUN_ENDPOINT = ("POST", "api/2.0/jobs/runs/cancel")
 
 USER_AGENT_HEADER = {"user-agent": "prefect-{v}".format(v=prefect.__version__)}
@@ -280,6 +282,20 @@ class DatabricksHook:
         result_state = state.get("result_state", None)
         state_message = state["state_message"]
         return RunState(life_cycle_state, result_state, state_message)
+
+    def get_run_output(self, run_id: str) -> str:
+        """
+        Retrieves the string passed to dbutils.notebook.exit
+
+        Args:
+            - run_id (str): id of the run
+
+        Returns
+            - str: notebook output
+        """
+        json = {"run_id": run_id}
+        response = self._do_api_call(GET_RUN_OUTPUT_ENDPOINT, json)
+        return response["notebook_output"]["result"]
 
     def cancel_run(self, run_id: str) -> None:
         """
